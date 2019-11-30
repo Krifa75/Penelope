@@ -1,71 +1,97 @@
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree
+from tqdm import tqdm
 import os
 import cv2
+# import pytesseract
+# pytesseract.pytesseract.tesseract_cmd = r"D:\Program Files\Tesseract-OCR\tesseract.exe"
 
+# Data directory
 xml_dir = './datasets/annotations'
 images_dir = './datasets/images'
-images_labeled_dir = './datasets/images-labeled'
 
-os.mkdir(images_labeled_dir)
+# YOLO struct directory
+images_data_dir = './datasets/data'
+images_labeled_dir = './datasets/data/img'
+
+if not os.path.isdir(images_data_dir):
+    os.mkdir(images_data_dir)
+if not os.path.isdir(images_labeled_dir):
+    os.mkdir(images_labeled_dir)
 
 xml_files = [os.path.join(xml_dir, xml_file).replace("\\", "/") for xml_file in os.listdir(xml_dir)]
 
-index = 0
+image_num = 0
 
-for xml_file in xml_files:
-    tree = ET.parse(xml_file)
-    root = tree.getroot()
+with tqdm(bar_format='{l_bar}{bar}{n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+    for xml_file in xml_files:
+        tree = ElementTree.parse(xml_file)
+        root = tree.getroot()
 
-    title = root.get('title')
-    pages = root.find('pages')
+        title = root.get('title')
+        pages = root.find('pages')
 
-    images = os.path.join(images_dir, title).replace("\\", "/")
+        images = os.path.join(images_dir, title).replace("\\", "/")
 
-    os.mkdir(os.path.join(images_labeled_dir, title).replace("\\", "/"))
+        pbar.total = len(pages)
+        pbar.set_description("Labeling {0}".format(title), refresh=False)
+        pbar.reset()
 
-    for page in pages:
-        index_img = page.get('index').zfill(3)
-        width = page.get('width')
-        height = page.get('height')
-        texts = page.findall('text')
+        for page in pages:
+            index_img = page.get('index').zfill(3)
 
-        index_str = str(index)
-        clean_image = os.path.join(images_dir, title, index_img + '.jpg').replace("\\", "/")
+            width = page.get('width')
+            height = page.get('height')
 
-        labeled_image = os.path.join(images_labeled_dir, index_str + '.jpg').replace("\\", "/")
-        bboxes = open(os.path.join(images_labeled_dir, index_str + '.txt').replace("\\", "/"), 'w')
+            pbar.update()
 
-        cv_image = cv2.imread(clean_image)
+            texts = page.findall('text')
+            if not texts:
+                continue
 
-        for each_text in texts:
-            id = each_text.get('id')  # Not sure if necessary
+            clean_image = os.path.join(images_dir, title, index_img + '.jpg').replace("\\", "/")
+            cv_image = cv2.imread(clean_image)
 
-            # Draw rectangle around the text 
-            # +/- 10 because some letters are output of the rectangle
-            xmin = int(each_text.get('xmin')) - 10
-            xmax = int(each_text.get('xmax')) + 10
-            ymin = int(each_text.get('ymin')) - 10
-            ymax = int(each_text.get('ymax')) + 10
+            labeled_image = os.path.join(images_labeled_dir, str(image_num) + '.jpg').replace("\\", "/")
 
-            # Convert to yolo format
-            dw = 1. / float(width)
-            dh = 1. / float(height)
-            x = (xmin + xmax) / 2.0
-            y = (ymin + ymax) / 2.0
-            w = xmax - xmin
-            h = ymax - ymin
-            x = x * dw
-            w = w * dw
-            y = y * dh
-            h = h * dh
-            text = each_text.text
-            if text is not None:
-                bboxes.write("0 {0} {1} {2} {3}\n".format(x, y, w, h))
-                # for debugging
-                # cv2.rectangle(cv_image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
-        bboxes.close()
-        index = index + 1
-        cv2.imwrite(labeled_image, cv_image)
-    print("{0} labeled".format(title))
+            bounding_boxes = open(os.path.join(images_labeled_dir, str(image_num) + '.txt').replace("\\", "/"), 'w')
+            for each_text in texts:
+                # Draw rectangle around the text
+                # +/- 10 because some letters are output of the rectangle
+                x_min = int(each_text.get('xmin')) - 10
+                x_max = int(each_text.get('xmax')) + 10
+                y_min = int(each_text.get('ymin')) - 10
+                y_max = int(each_text.get('ymax')) + 10
 
-print("finis")
+                # Convert to yolo format
+                dw = 1. / float(width)
+                dh = 1. / float(height)
+                x = (x_min + x_max) / 2.0
+                y = (y_min + y_max) / 2.0
+                w = x_max - x_min
+                h = y_max - y_min
+                x = x * dw
+                w = w * dw
+                y = y * dh
+                h = h * dh
+
+                text = each_text.text
+                if text is not None:
+                    bounding_boxes.write("0 {0} {1} {2} {3}\n".format(x, y, w, h))
+
+                    # TEST PYTESSERACT
+                    # RESULT : FAILED
+                    # image_roi = cv_image[y_min:y_max, x_min:x_max]
+                    # configuration = "-l jpn_vert --oem 1 --psm 5"
+                    # pytext = pytesseract.image_to_string(image_roi, config=configuration).replace("\n", "").replace(" ", "")
+                    # if text == pytext:
+                    #     print("It's equal {0} and {1}".format(text, pytext))
+                    # else:
+                    #     print("It's NOT equal {0} and {1}".format(text, pytext))
+                    # assert text == pytext, "Difference between {0} and {1}".format(text, pytext)
+
+                    # For debugging
+                    # cv2.rectangle(cv_image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+
+            image_num = image_num + 1
+            bounding_boxes.close()
+            cv2.imwrite(labeled_image, cv_image)
