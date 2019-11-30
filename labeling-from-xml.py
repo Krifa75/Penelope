@@ -22,6 +22,8 @@ xml_files = [os.path.join(xml_dir, xml_file).replace("\\", "/") for xml_file in 
 
 image_num = 0
 
+images_train = []
+
 with tqdm(bar_format='{l_bar}{bar}{n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
     for xml_file in xml_files:
         tree = ElementTree.parse(xml_file)
@@ -52,8 +54,10 @@ with tqdm(bar_format='{l_bar}{bar}{n_fmt}/{total_fmt} [{elapsed}<{remaining}]') 
             cv_image = cv2.imread(clean_image)
 
             labeled_image = os.path.join(images_labeled_dir, str(image_num) + '.jpg').replace("\\", "/")
+            images_train.append(os.path.relpath(labeled_image, './datasets') + '\n')
 
             bounding_boxes = open(os.path.join(images_labeled_dir, str(image_num) + '.txt').replace("\\", "/"), 'w')
+
             for each_text in texts:
                 # Draw rectangle around the text
                 # +/- 10 because some letters are output of the rectangle
@@ -95,3 +99,8 @@ with tqdm(bar_format='{l_bar}{bar}{n_fmt}/{total_fmt} [{elapsed}<{remaining}]') 
             image_num = image_num + 1
             bounding_boxes.close()
             cv2.imwrite(labeled_image, cv_image)
+
+# Store path images in a file (yolo convention)
+with open(os.path.join(images_data_dir, 'train.txt').replace("\\", "/"), 'w') as train_file:
+    train_file.writelines(images_train)
+    train_file.close()
